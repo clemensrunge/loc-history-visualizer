@@ -51,7 +51,9 @@ git push origin v0.8.3
 
 For development builds, open the repository's **Actions** tab, select a successful **Build CLion plugin** run, and download the `loc-history-visualizer-plugin` artifact. Its archive contains the installable plugin ZIP.
 
-Build and run the standalone, dependency-free command-line analyzer:
+## Run headless
+
+The standalone command-line analyzer uses the same Git-based counting engine without starting CLion. It reads files directly from commits and does not check them out or modify the working tree. Build and run it with JDK 21 and Git:
 
 ```bash
 ./gradlew cliJar
@@ -59,7 +61,16 @@ java -jar build/libs/loc-history-visualizer-0.8.3-cli.jar \
   --repo . --branch HEAD --commits 100
 ```
 
-The CLI writes TSV by default, including RLOC, LOC, and RLOC percentage for each file and folder. Generate a Markdown dashboard with a base-ref comparison using:
+By default it writes tab-separated records to standard output for the project, every directory, and every file at every analyzed commit. This is suitable for scripts, spreadsheets, databases, and monitoring tools. For example, running it on this repository at `v0.8.3` produces:
+
+```text
+branch	commit	timestamp	path	kind	rloc	loc	rloc_percent
+HEAD	352f375ac51779b9bbc214f3ab5ad42e06f54503	2026-09-14T18:15:48Z	.	folder	1904	2147	88.68
+HEAD	352f375ac51779b9bbc214f3ab5ad42e06f54503	2026-09-14T18:15:48Z	src	folder	1759	1946	90.39
+HEAD	352f375ac51779b9bbc214f3ab5ad42e06f54503	2026-09-14T18:15:48Z	src/main/java/dev/lochistory/cli/LocHistoryCli.java	file	220	240	91.67
+```
+
+Generate a readable Markdown dashboard and compare the latest snapshot with a base ref:
 
 ```bash
 java -jar build/libs/loc-history-visualizer-0.8.3-cli.jar \
@@ -67,14 +78,48 @@ java -jar build/libs/loc-history-visualizer-0.8.3-cli.jar \
   --format markdown --output LOC_HISTORY.md
 ```
 
-Use `--check LOC_HISTORY.md` instead of `--output` to exit with status `3` when a committed report is stale. List available refs with `--list-branches`; use `--sample-every N` to cover a longer period with fewer snapshots.
+Its output looks like this:
+
+```markdown
+# Lines of code history
+
+## Current total
+
+**2,147 LOC** at `352f375a` (delta from `3bf0893c`: **+7**)
+
+## History
+
+| Commit | Date | LOC | Change |
+|---|---:|---:|---:|
+| `b27881b1` | 2026-09-14 | 23 | — |
+| `59c96c51` | 2026-09-14 | 2,136 | +2,113 |
+| `3bf0893c` | 2026-09-14 | 2,140 | +4 |
+| `352f375a` | 2026-09-14 | 2,147 | +7 |
+
+## Latest folders
+
+| Folder | LOC | Share | Delta |
+|---|---:|---:|---:|
+| `src` | 1,946 | 90.6% | 0 |
+| `gradle` | 7 | 0.3% | 0 |
+```
+
+Useful options:
+
+- `--list-branches` lists available local and remote refs.
+- `--sample-every N` analyzes every Nth commit to cover a longer history with fewer snapshots.
+- `--quiet` suppresses progress messages on standard error.
+- `--output FILE` writes the report to a file instead of standard output.
+- `--check FILE` compares freshly generated output with a tracked report. It exits with status `3` when that report is stale, making it useful as a CI check.
+
+Other exit codes are `0` for success, `1` for Git or filesystem errors, and `2` for invalid arguments.
 
 ## CI integration
 
 The included [GitHub Actions workflow](.github/workflows/loc-history.yml):
 
 - Builds the headless analyzer.
-- Adds LOC/RLOC deltas to pull-request job summaries.
+- Adds LOC deltas to pull-request job summaries.
 - Refreshes and commits `LOC_HISTORY.md` after pushes to `main` when the report changed.
 
 The workflow checks out full history (`fetch-depth: 0`) so comparisons and complete reports are available.
