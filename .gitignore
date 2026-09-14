@@ -1,0 +1,12 @@
+.gradle/
+.gradle-user-home/
+.intellijPlatform/
+.idea/
+build/
+out/
+*.iml
+*.ipr
+*.iws
+*.log
+.DS_Store
+Thumbs.db

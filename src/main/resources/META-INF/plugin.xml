@@ -1,0 +1,18 @@
+<idea-plugin>
+    <id>dev.lochistory.visualizer</id>
+    <name>LOC History Visualizer</name>
+    <vendor email="support@example.invalid">LOC History</vendor>
+
+    <description><![CDATA[
+        Visualizes physical lines of code per folder and file across Git commits and branches.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.clion</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="LOC History"
+                    anchor="right"
+                    factoryClass="dev.lochistory.ui.LocHistoryToolWindowFactory"/>
+    </extensions>
+</idea-plugin>
