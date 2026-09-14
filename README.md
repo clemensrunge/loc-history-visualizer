@@ -42,7 +42,14 @@ Build the installable CLion plugin:
 
 The ZIP is created under `build/distributions/`.
 
-For a build produced by GitHub, open the repository's **Actions** tab, select a successful **Build CLion plugin** run, and download the `loc-history-visualizer-plugin` artifact. Its archive contains the installable plugin ZIP.
+Download a permanent, installable plugin ZIP from the repository's **Releases** page. Maintainers publish one by pushing a version tag, for example:
+
+```bash
+git tag v0.8.3
+git push origin v0.8.3
+```
+
+For development builds, open the repository's **Actions** tab, select a successful **Build CLion plugin** run, and download the `loc-history-visualizer-plugin` artifact. Its archive contains the installable plugin ZIP.
 
 Build and run the standalone, dependency-free command-line analyzer:
 
@@ -72,7 +79,7 @@ The included [GitHub Actions workflow](.github/workflows/loc-history.yml):
 
 The workflow checks out full history (`fetch-depth: 0`) so comparisons and complete reports are available.
 
-The separate [plugin build workflow](.github/workflows/build-plugin.yml) runs tests and plugin configuration checks, builds the installable ZIP, and uploads it as a 30-day downloadable GitHub Actions artifact on pushes, pull requests, and manual runs.
+The separate [plugin build workflow](.github/workflows/build-plugin.yml) runs tests and plugin configuration checks, builds the installable ZIP, and uploads it as a 90-day GitHub Actions artifact on pushes, pull requests, and manual runs. Pushing a `v*` tag additionally creates a GitHub Release with the installable ZIP as a permanent release asset.
 
 ## Counting and exclusions
 
