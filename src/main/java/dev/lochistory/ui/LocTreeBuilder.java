@@ -1,5 +1,7 @@
 package dev.lochistory.ui;
 
+import dev.lochistory.model.CountingMetric;
+
 import dev.lochistory.model.LocSnapshot;
 
 import javax.swing.tree.DefaultMutableTreeNode;
@@ -11,15 +13,15 @@ final class LocTreeBuilder {
     private LocTreeBuilder() {}
 
     static DefaultMutableTreeNode build(LocSnapshot snapshot, LocSnapshot rollupSource,
-                                        boolean showRloc, Set<String> collapsedDirectories) {
+                                        CountingMetric metric, Set<String> collapsedDirectories) {
         MutablePath root = new MutablePath("Project", "", false);
-        snapshot.metricsByFile().forEach((path, metrics) -> insert(root, path, metrics.loc(), metrics.rloc()));
+        snapshot.metricsByFile().forEach((path, metrics) -> insert(root, path, metrics.loc(), metrics.rloc(), metrics.value(metric)));
         collapsedDirectories.forEach(path -> insertCollapsed(root, path,
-                rollupSource.linesFor(path, false, false), rollupSource.linesFor(path, false, true)));
-        return freeze(root, showRloc, collapsedDirectories);
+                rollupSource.linesFor(path, false, false), rollupSource.linesFor(path, false, true), rollupSource.linesFor(path, false, metric)));
+        return freeze(root, metric, collapsedDirectories);
     }
 
-    private static void insertCollapsed(MutablePath root, String path, int loc, int rloc) {
+    private static void insertCollapsed(MutablePath root, String path, int loc, int rloc, int count) {
         MutablePath current = root;
         StringBuilder full = new StringBuilder();
         for (String part : path.split("/")) {
@@ -31,13 +33,15 @@ final class LocTreeBuilder {
         }
         current.loc = loc;
         current.rloc = rloc;
+        current.count = count;
     }
 
-    private static void insert(MutablePath root, String path, int loc, int rloc) {
+    private static void insert(MutablePath root, String path, int loc, int rloc, int count) {
         String[] parts = path.split("/");
         MutablePath current = root;
         current.loc += loc;
         current.rloc += rloc;
+        current.count += count;
         StringBuilder full = new StringBuilder();
         for (int i = 0; i < parts.length; i++) {
             if (full.length() > 0) full.append('/');
@@ -50,17 +54,18 @@ final class LocTreeBuilder {
                     ignored -> new MutablePath(name, nodePath, file));
             child.loc += loc;
             child.rloc += rloc;
+            child.count += count;
             current = child;
         }
     }
 
-    private static DefaultMutableTreeNode freeze(MutablePath value, boolean showRloc,
+    private static DefaultMutableTreeNode freeze(MutablePath value, CountingMetric metric,
                                                  Set<String> collapsedDirectories) {
         boolean collapsed = collapsedDirectories.contains(value.path);
         DefaultMutableTreeNode node = new DefaultMutableTreeNode(
                 new PathNode(value.name + (collapsed ? " [excluded]" : ""), value.path,
-                        value.file, value.loc, value.rloc, showRloc));
-        if (!collapsed) value.children.values().forEach(child -> node.add(freeze(child, showRloc, collapsedDirectories)));
+                        value.file, value.loc, value.rloc, value.count, metric));
+        if (!collapsed) value.children.values().forEach(child -> node.add(freeze(child, metric, collapsedDirectories)));
         return node;
     }
 
@@ -71,6 +76,7 @@ final class LocTreeBuilder {
         private final Map<String, MutablePath> children = new TreeMap<>();
         private int loc;
         private int rloc;
+        private int count;
 
         private MutablePath(String name, String path, boolean file) {
             this.name = name;

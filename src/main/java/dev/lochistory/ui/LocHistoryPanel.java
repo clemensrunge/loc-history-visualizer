@@ -1,5 +1,7 @@
 package dev.lochistory.ui;
 
+import dev.lochistory.model.CountingMetric;
+
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
@@ -40,9 +42,7 @@ final class LocHistoryPanel extends JPanel {
     private final RunGreenButton analyzeAll = new RunGreenButton("Analyze All");
     private final JCheckBox respectGitIgnore = new JCheckBox("Respect .gitignore", true);
     private final JComboBox<String> excludedTypes = new JComboBox<>();
-    private final JBLabel ratio = new JBLabel("RLOC/LOC: —");
-    private final JBLabel deviation = new JBLabel("σ/files: —");
-    private final JCheckBox showRloc = new JCheckBox("Show RLOC", true);
+    private final JComboBox<CountingMetric> metric = new JComboBox<>(CountingMetric.values());
     private final JBLabel status = new JBLabel("Finding Git branches…");
     private final JTree tree = new JTree(new DefaultMutableTreeNode("No history loaded"));
     private final LocChartPanel chart = new LocChartPanel();
@@ -65,6 +65,7 @@ final class LocHistoryPanel extends JPanel {
         JSpinner.NumberEditor commitEditor = new JSpinner.NumberEditor(maximumCommits, "0");
         commitEditor.getTextField().setColumns(6);
         maximumCommits.setEditor(commitEditor);
+        metric.setSelectedItem(CountingMetric.RLOC);
         add(buildToolbar(), BorderLayout.NORTH);
 
         tree.setRootVisible(true);
@@ -86,13 +87,13 @@ final class LocHistoryPanel extends JPanel {
         chart.setRangeListener((from, to) -> {
             diffFrom = visualSnapshot(from);
             diffTo = visualSnapshot(to);
-            treemap.showDiff(diffFrom, diffTo, showRloc.isSelected(), excludedDirectories);
+            treemap.showDiff(diffFrom, diffTo, selectedMetric(), excludedDirectories);
         }, () -> {
             diffFrom = null;
             diffTo = null;
             if (result != null && !result.snapshots().isEmpty()) {
                 treemap.showSnapshot(visualResult.snapshots().get(visualResult.snapshots().size() - 1),
-                        showRloc.isSelected(), excludedDirectories);
+                        selectedMetric(), excludedDirectories);
             }
         });
 
@@ -104,7 +105,7 @@ final class LocHistoryPanel extends JPanel {
             analyzeAll.clearHighlight();
             analyzeEntireBranch();
         });
-        showRloc.addActionListener(event -> refreshVisuals());
+        metric.addActionListener(event -> refreshVisuals());
         respectGitIgnore.addActionListener(event -> {
             refreshExcludedTypesDropdown();
             if (rawResult != null && !busy) startAnalysis(lastAnalysisAll);
@@ -150,28 +151,22 @@ final class LocHistoryPanel extends JPanel {
         JBLabel sampleLabel = new JBLabel("Sample every:");
         explain(sampleLabel, "Controls the distance between analyzed commits on the branch's first-parent history.");
         explain(sampleEvery, "Analyze every Nth commit. Increase this to cover a longer period with less processing.");
-        explain(analyze, "Read the selected branch's commits and calculate LOC and RLOC for every included file and folder.");
+        explain(analyze, "Read the selected branch's commits and calculate LOC, RLOC, OpenAI tokens and Claude tokens for every included file and folder.");
         explain(analyzeAll, "Analyze every first-parent commit on the selected branch back to its initial commit. This runs in the background and can be cancelled, but large histories may take substantial CPU time.");
         explain(respectGitIgnore, "Apply all repository and nested .gitignore rules. Changing this after analysis automatically reruns the last analysis mode. Dot-directories such as .github and .cache are always excluded.");
         explain(excludedTypes, "Shows manually excluded file types and directories plus active .gitignore rules. Select a manual exclusion to remove it; .gitignore entries are controlled by the checkbox.");
-        explain(ratio, "RLOC divided by physical LOC at the latest analyzed commit. A lower percentage means more blank or comment-only lines.");
-        explain(deviation, "Population standard deviation across all included files at the latest commit, using the currently displayed LOC or RLOC metric.");
-        explain(showRloc, "Checked: show RLOC, excluding blank and comment-only lines. Unchecked: show all physical LOC. This switches the tree, treemap, graph, totals, and statistics.");
+        explain(metric, "Choose physical LOC, RLOC excluding blank and comment-only lines, OpenAI source tokens using o200k_base, or Claude 4.8+ tokens (including Sonnet 5 and Fable 5), using ctok-java’s reconstructed 4.8+ family. Fixed message overhead is excluded. ctok does not model Opus 5’s free trailing ASCII whitespace. This switches the tree, treemap, graph, totals, and statistics.");
         controls.add(sampleLabel);
         controls.add(sampleEvery);
         controls.add(analyze);
         controls.add(analyzeAll);
         controls.add(respectGitIgnore);
         controls.add(excludedTypes);
-        controls.add(Box.createHorizontalStrut(8));
-        controls.add(ratio);
-        controls.add(Box.createHorizontalStrut(8));
-        controls.add(deviation);
-        controls.add(showRloc);
+        controls.add(metric);
 
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.add(controls, BorderLayout.NORTH);
-        explain(status, "Shows analysis progress, the number of sampled commits, the current metric total, and the latest analyzed commit.");
+        explain(status, "Shows analysis progress, sampled commits, the selected metric total, and the latest commit, followed by RLOC/LOC percentage, OpenAI tokens (jtokkit o200k_base), Claude tokens (ctok-java reconstructed 4.8+ family, including Fable), and OpenAI/Claude percentage for the latest analyzed commit. Token totals sum per-file content counts and exclude fixed message overhead.");
         status.setBorder(BorderFactory.createEmptyBorder(0, 8, 6, 8));
         wrapper.add(status, BorderLayout.SOUTH);
         return wrapper;
@@ -283,11 +278,8 @@ final class LocHistoryPanel extends JPanel {
                     setBusy(false, "No commits found on " + branch);
                     return;
                 }
-                LocSnapshot latest = result.snapshots().get(result.snapshots().size() - 1);
                 refreshVisuals();
-                int total = latest.linesFor("", false, showRloc.isSelected());
-                setBusy(false, loaded.snapshots().size() + " commits · " + String.format("%,d", total) +
-                        (showRloc.isSelected() ? " RLOC" : " LOC") + " at " + latest.commit().shortHash());
+                setBusy(false, summaryText());
             }
         });
     }
@@ -309,7 +301,6 @@ final class LocHistoryPanel extends JPanel {
         sampleEvery.setEnabled(!busy);
         respectGitIgnore.setEnabled(!busy);
         excludedTypes.setEnabled(!busy);
-        showRloc.setEnabled(!busy);
         status.setText(message);
     }
 
@@ -456,26 +447,32 @@ final class LocHistoryPanel extends JPanel {
         return path.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
+    private CountingMetric selectedMetric() { return (CountingMetric) metric.getSelectedItem(); }
+
     private void refreshVisuals() {
         if (result == null || result.snapshots().isEmpty()) return;
-        boolean rloc = showRloc.isSelected();
+        CountingMetric selected = selectedMetric();
         LocSnapshot latest = result.snapshots().get(result.snapshots().size() - 1);
         LocSnapshot visualLatest = visualResult.snapshots().get(visualResult.snapshots().size() - 1);
-        DefaultMutableTreeNode root = LocTreeBuilder.build(latest, visualLatest, rloc, excludedDirectories);
+        DefaultMutableTreeNode root = LocTreeBuilder.build(latest, visualLatest, selected, excludedDirectories);
         tree.setModel(new javax.swing.tree.DefaultTreeModel(root));
-        if (diffFrom != null && diffTo != null) treemap.showDiff(diffFrom, diffTo, rloc, excludedDirectories);
-        else treemap.showSnapshot(visualLatest, rloc, excludedDirectories);
+        if (diffFrom != null && diffTo != null) treemap.showDiff(diffFrom, diffTo, selected, excludedDirectories);
+        else treemap.showSnapshot(visualLatest, selected, excludedDirectories);
         tree.setSelectionRow(0);
         tree.expandRow(0);
-        int loc = latest.linesFor("", false, false);
-        int real = latest.linesFor("", false, true);
-        ratio.setText(String.format("RLOC/LOC: %.1f%%", loc == 0 ? 0 : real * 100.0 / loc));
-        deviation.setText(String.format("σ/files: %,.1f %s", latest.standardDeviation(rloc), rloc ? "RLOC" : "LOC"));
-        if (!busy) {
-            int total = latest.linesFor("", false, rloc);
-            status.setText(result.snapshots().size() + " commits · " + String.format("%,d", total) +
-                    (rloc ? " RLOC" : " LOC") + " at " + latest.commit().shortHash());
-        }
+        if (!busy) status.setText(summaryText());
+    }
+
+    private String summaryText() {
+        LocSnapshot latest = result.snapshots().get(result.snapshots().size() - 1);
+        CountingMetric selected = selectedMetric();
+        return result.snapshots().size() + " commits · " +
+                String.format("%,d %s at %s · RLOC/LOC: %.1f%% · OpenAI tokens: %,d · %s: %,d · OpenAI/Claude: %.1f%%",
+                        latest.linesFor("", false, selected), selected, latest.commit().shortHash(),
+                        latest.percentage(CountingMetric.RLOC, CountingMetric.LOC),
+                        latest.linesFor("", false, CountingMetric.OPENAI_TOKENS),
+                        CountingMetric.CLAUDE_TOKENS, latest.linesFor("", false, CountingMetric.CLAUDE_TOKENS),
+                        latest.percentage(CountingMetric.OPENAI_TOKENS, CountingMetric.CLAUDE_TOKENS));
     }
 
     private static AnalysisProgress adapt(ProgressIndicator indicator) {

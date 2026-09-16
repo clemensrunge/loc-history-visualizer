@@ -1,6 +1,6 @@
 # LOC History Visualizer for CLion
 
-Track LOC and RLOC across Git commits and branches with a file/folder treemap, history graph, range diffs, exclusions, and a headless CI reporter.
+Track LOC, RLOC, OpenAI tokens, and Claude tokens across Git commits and branches with a file/folder treemap, history graph, range diffs, exclusions, and a headless CI reporter.
 
 ## Run it
 
@@ -20,9 +20,9 @@ To run a development CLion instance instead (requires JDK 21 and Git):
 
 - Analyzes local and remote branch history without checking out or changing the working tree.
 - **Analyze** samples a configurable number of first-parent commits; **Analyze All** walks back to the initial commit and fills in the discovered commit count.
-- Tracks physical **LOC** and **RLOC** (nonblank, non-comment lines) with a live global toggle.
+- Offers a counting dropdown for physical **LOC**, **RLOC** (nonblank, non-comment lines), **OpenAI tokens**, and **Claude 4.8+ tokens** (tokenizer details in the tooltip). Switching updates all views and statistics without rerunning analysis.
 - Shows aggregate counts in a folder tree, file-type-colored squarified treemap, and interactive history graph.
-- Displays the current RLOC/LOC percentage and per-file standard deviation.
+- Displays commit count and selected metric total, followed by the RLOC/LOC percentage, OpenAI and Claude token totals, and OpenAI/Claude percentage on the second header line.
 - Uses rounded Y-axis scales, grid lines, responsive tooltips, date ticks, and a commit-snapping hover guide.
 - Drag between commits in the graph to show an absolute-change treemap. Additions retain their file-type color; removals use its desaturated form. Tooltips show signed changes and resulting totals.
 - Right-click a file to exclude its complete file type from every snapshot and statistic.
@@ -45,8 +45,8 @@ The ZIP is created under `build/distributions/`.
 Download a permanent, installable plugin ZIP from the repository's **Releases** page. Maintainers publish one by pushing a version tag, for example:
 
 ```bash
-git tag v0.8.3
-git push origin v0.8.3
+git tag v0.9.0
+git push origin v0.9.0
 ```
 
 For development builds, open the repository's **Actions** tab, select a successful **Build CLion plugin** run, and download the `loc-history-visualizer-plugin` artifact. Its archive contains the installable plugin ZIP.
@@ -57,7 +57,7 @@ The standalone command-line analyzer uses the same Git-based counting engine wit
 
 ```bash
 ./gradlew cliJar
-java -jar build/libs/loc-history-visualizer-0.8.3-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \
   --repo . --branch HEAD --commits 100
 ```
 
@@ -73,7 +73,7 @@ HEAD	352f375ac51779b9bbc214f3ab5ad42e06f54503	2026-09-14T18:15:48Z	src/main/java
 Generate a readable Markdown dashboard and compare the latest snapshot with a base ref:
 
 ```bash
-java -jar build/libs/loc-history-visualizer-0.8.3-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \
   --repo . --branch HEAD --compare origin/main \
   --format markdown --output LOC_HISTORY.md
 ```
@@ -130,6 +130,20 @@ The separate [plugin build workflow](.github/workflows/build-plugin.yml) runs te
 
 LOC counts every physical line in Git-tracked text files. RLOC removes blank and comment-only lines for common C/C++, JVM, JavaScript/TypeScript, scripting, SQL, and XML-style languages. Binary files are ignored.
 
+OpenAI tokens are counted locally with [jtokkit](https://github.com/knuddelsgmbh/jtokkit), using the `o200k_base` encoding on each complete UTF-8 file, including comments, whitespace, and original line endings. Folder/project counts sum individual file token counts; filenames and chat request overhead are excluded. These counts apply to models using that encoding, and are not Anthropic counts. Unchanged Git blobs reuse their token counts across the analysis.
+
+Claude tokens are counted offline with [ctok-java](https://github.com/clemensrunge/ctok-java), pinned at `6f9e38a4e4e02af4af66edfb3650f7294ddb8f82` under `vendor/ctok-java`. The single **Claude 4.8+ tokens** option uses `Ctok.forVersion("4.8").contentTokenCount(text)`, covering the pinned reconstruction’s shared family for Opus 4.8, Sonnet 5, and Fable 5, with fixed single-message overhead removed. This is an independent reconstruction, not an official Anthropic tokenizer. Each file is counted separately; family-specific leading boundaries and trailing-newline handling are preserved. Both providers use the same included file contents and exclusions. The pinned ctok reconstruction does not model Opus 5’s free trailing ASCII whitespace. The OpenAI/Claude statistic is OpenAI content tokens divided by Claude 4.8+ content tokens, multiplied by 100.
+
+Counting metrics are stored by metric identity, and provider implementations share the `TokenCounter` interface. Both token metrics work in the tree, treemap, history graph, range diffs, and totals without rerunning analysis when switching the dropdown.
+
 Analysis reads immutable commits through the Git CLI; it never modifies the checkout. In addition to dot-directories, common generated/vendor directories such as `build`, `out`, `target`, `node_modules`, `vendor`, `dist`, `.gradle`, and `cmake-build-*` are excluded by default.
 
 The implementation does not depend on CLion C/C++ PSI APIs, so it can count every text language and works with both Nova and Classic language engines.
+
+## License
+
+LOC History Visualizer is licensed under the [MIT License](LICENSE), copyright © 2026 Clemens Runge.
+
+This project bundles [jtokkit 1.1.0](https://github.com/knuddelsgmbh/jtokkit/tree/1.1.0), licensed under the [MIT License](licenses/jtokkit-LICENSE.txt), copyright © 2023 Knuddels, Philip Müller. The full project and jtokkit license notices are included under `META-INF/licenses/` in both the plugin JAR and standalone CLI JAR.
+
+The project also bundles [ctok-java 1.3.0-java.1](https://github.com/clemensrunge/ctok-java), a Java port of Sander Land’s ctok. Its [MIT license](vendor/ctok-java/LICENSE) retains copyright © 2026 Sander Land and © 2026 Clemens Runge. Its [attribution notice](vendor/ctok-java/NOTICE) and [provenance metadata](vendor/ctok-java/PROVENANCE.json) are bundled under `META-INF/licenses/ctok/` in the dependency JAR and standalone CLI JAR.

@@ -32,4 +32,14 @@ class LocSnapshotTest {
         assertEquals(46, snapshot.linesFor("", false, true));
         assertEquals(42, snapshot.linesFor("src", false, true));
     }
+    @Test
+    void tokenStatisticsAndMetricComparisons() {
+        var tokens = new LocSnapshot(snapshot.commit(), Map.of(
+                "src/a", new FileMetrics(Map.of(CountingMetric.LOC, 4, CountingMetric.OPENAI_TOKENS, 10)),
+                "src/b", new FileMetrics(Map.of(CountingMetric.LOC, 6, CountingMetric.OPENAI_TOKENS, 20))));
+        assertEquals(30, tokens.linesFor("", false, CountingMetric.OPENAI_TOKENS));
+        assertEquals(5, tokens.standardDeviation(CountingMetric.OPENAI_TOKENS));
+        assertEquals(300, tokens.percentage(CountingMetric.OPENAI_TOKENS, CountingMetric.LOC));
+        assertEquals(0, new LocSnapshot(snapshot.commit(), Map.of()).percentage(CountingMetric.RLOC, CountingMetric.LOC));
+    }
 }

@@ -1,0 +1,250 @@
+{
+  "upstream": "https://github.com/sanderland/ctok",
+  "version": "1.3.0",
+  "commit": "ad78ea15a1febf983b379475b20f5a2b0d2ebe76",
+  "python": "3.12.14",
+  "unicode": "15.0.0",
+  "regex": "2026.8.31",
+  "vocabularies": {
+    "pieces_v3.json": {
+      "sha256": "4c6db216062ef01e70ba033ff52ad3b97f886e79877235f2c7bbbd40d09ffb9b",
+      "meta": {
+        "family": "v3",
+        "description": "Claude 3 … Opus 4.5/4.6 tokenizer (count reproduction)",
+        "source_model": "claude-opus-4-5",
+        "base": 8,
+        "message_overhead": 7,
+        "fold_quotes": true,
+        "allcaps_min": 4,
+        "digit_group": 3,
+        "built": "2026-08-11T15:47:35.460946+00:00",
+        "provenance": "every token measured with count_tokens against this family's source model",
+        "witness": {
+          "standard": "one probe per piece: cost = raw - base + 1 - overhead, and cost == 1 is what membership means. raw is the count_tokens value the probe returned; kind names its template below. See README.md for the public contract.",
+          "measured_on": "claude-opus-4-5",
+          "base": 8,
+          "templates": {
+            "raw": [
+              "{}",
+              0
+            ],
+            "word": [
+              ".{}.",
+              2
+            ],
+            "bow": [
+              ".{}ヲ.",
+              5
+            ],
+            "eow": [
+              ".ヲ{}.",
+              5
+            ],
+            "mid": [
+              ".ヲ{}ヲ.",
+              8
+            ],
+            "cased_bow": [
+              "{}NotFoundException",
+              1
+            ],
+            "cased_eow": [
+              "getElementsBy{}",
+              1
+            ],
+            "cased_mid": [
+              "getElementsBy{}NotFoundException",
+              2
+            ],
+            "char": [
+              "a{}a",
+              2
+            ],
+            "glued": [
+              "a{}b",
+              2
+            ],
+            "digit_mid": [
+              "1{}1",
+              3
+            ],
+            "digit_bow": [
+              "a {}1",
+              2
+            ],
+            "digit_eow": [
+              "1{} a",
+              3
+            ],
+            "digit_word": [
+              "a {} a",
+              2
+            ],
+            "contraction": [
+              "a{}",
+              1
+            ],
+            "mark_mid": [
+              ".ᛒ{}ᛒ.",
+              10
+            ],
+            "mark_sep": [
+              ".ᛒ{}ᛒ.",
+              12
+            ]
+          },
+          "coverage": {
+            "bow": 10045,
+            "cased_bow": 880,
+            "cased_eow": 116,
+            "cased_mid": 142,
+            "char": 2391,
+            "contraction": 7,
+            "digit_bow": 30,
+            "digit_eow": 252,
+            "digit_mid": 835,
+            "digit_word": 119,
+            "eow": 7804,
+            "glued": 1110,
+            "mark_mid": 26,
+            "mark_sep": 22,
+            "mid": 4781,
+            "prefix": 467,
+            "raw": 6508,
+            "special": 4,
+            "word": 13253
+          }
+        }
+      },
+      "groups": {
+        "word_pieces": 45761,
+        "ascii_digits": 1110,
+        "other_digits": 36,
+        "punctuation": 1337,
+        "whitespace": 70,
+        "bytes_fallback": 467,
+        "contractions": 7,
+        "markers": 4
+      }
+    },
+    "pieces_v4_7.json": {
+      "sha256": "a785fc240010c855f3d9a498fbd422ee389752dd151f1d5eef57ca8c85c19993",
+      "meta": {
+        "family": "v4.7",
+        "description": "Claude Opus 4.7+ tokenizer (count reproduction)",
+        "source_model": "claude-opus-4-7",
+        "base": 12,
+        "message_overhead": 11,
+        "fold_quotes": false,
+        "allcaps_min": null,
+        "digit_group": 3,
+        "built": "2026-08-11T15:47:35.883846+00:00",
+        "provenance": "every token measured with count_tokens against this family's source model",
+        "witness": {
+          "standard": "one probe per piece: cost = raw - base + 1 - overhead, and cost == 1 is what membership means. raw is the count_tokens value the probe returned; kind names its template below. See README.md for the public contract.",
+          "measured_on": "claude-opus-4-7",
+          "base": 12,
+          "templates": {
+            "raw": [
+              "{}",
+              0
+            ],
+            "word": [
+              ".{}.",
+              2
+            ],
+            "bow": [
+              ".{}ヲ.",
+              5
+            ],
+            "eow": [
+              ".ヲ{}.",
+              5
+            ],
+            "mid": [
+              ".ヲ{}ヲ.",
+              8
+            ],
+            "cased_bow": [
+              "{}Controller",
+              1
+            ],
+            "cased_eow": [
+              "československ{}",
+              1
+            ],
+            "cased_mid": [
+              "československ{}Controller",
+              2
+            ],
+            "char": [
+              "a{}a",
+              2
+            ],
+            "glued": [
+              "a{}b",
+              2
+            ],
+            "digit_mid": [
+              "1{}1",
+              3
+            ],
+            "digit_bow": [
+              "a {}1",
+              2
+            ],
+            "digit_eow": [
+              "1{} a",
+              3
+            ],
+            "digit_word": [
+              "a {} a",
+              2
+            ],
+            "contraction": [
+              "a{}",
+              1
+            ],
+            "mark_mid": [
+              ".ᛒ{}ᛒ.",
+              10
+            ],
+            "mark_sep": [
+              ".ᛒ{}ᛒ.",
+              12
+            ]
+          },
+          "coverage": {
+            "bow": 3345,
+            "cased_bow": 201,
+            "char": 2371,
+            "contraction": 4,
+            "digit_bow": 5,
+            "digit_eow": 93,
+            "digit_mid": 264,
+            "digit_word": 49,
+            "eow": 2801,
+            "glued": 1110,
+            "mark_mid": 20,
+            "mark_sep": 21,
+            "mid": 2382,
+            "prefix": 468,
+            "raw": 2116,
+            "special": 3,
+            "word": 30
+          }
+        }
+      },
+      "groups": {
+        "word_pieces": 13228,
+        "ascii_digits": 1110,
+        "other_digits": 34,
+        "punctuation": 385,
+        "whitespace": 51,
+        "bytes_fallback": 468,
+        "contractions": 4,
+        "markers": 3
+      }
+    }
+  }
+}

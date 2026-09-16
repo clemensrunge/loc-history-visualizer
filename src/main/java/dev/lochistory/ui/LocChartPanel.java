@@ -1,5 +1,7 @@
 package dev.lochistory.ui;
 
+import dev.lochistory.model.CountingMetric;
+
 import com.intellij.ui.JBColor;
 import dev.lochistory.model.LocSnapshot;
 
@@ -26,7 +28,7 @@ final class LocChartPanel extends JPanel {
     private String path = "";
     private boolean file;
     private String title = "Project";
-    private boolean showRloc = true;
+    private CountingMetric metric = CountingMetric.RLOC;
     private int hoverIndex = -1;
     private int rangeStart = -1;
     private int rangeEnd = -1;
@@ -93,7 +95,7 @@ final class LocChartPanel extends JPanel {
 
     private void showExcludeMenu(MouseEvent event) {
         if (!file || path.isEmpty()) return;
-        PathNode node = new PathNode(path.substring(path.lastIndexOf('/') + 1), path, true, 0, 0, showRloc);
+        PathNode node = new PathNode(path.substring(path.lastIndexOf('/') + 1), path, true, 0, 0, 0, metric);
         JPopupMenu menu = new JPopupMenu();
         JMenuItem exclude = new JMenuItem("Exclude " + LocHistoryPanel.fileTypeLabel(path));
         exclude.addActionListener(ignored -> excludeListener.accept(node));
@@ -112,7 +114,7 @@ final class LocChartPanel extends JPanel {
         path = selected.path();
         file = selected.file();
         title = selected.path().isEmpty() ? "Project" : selected.path();
-        showRloc = selected.showRloc();
+        metric = selected.metric();
         repaint();
     }
 
@@ -132,7 +134,7 @@ final class LocChartPanel extends JPanel {
                 return;
             }
 
-            int observedMax = snapshots.stream().mapToInt(s -> s.linesFor(path, file, showRloc)).max().orElse(0);
+            int observedMax = snapshots.stream().mapToInt(s -> s.linesFor(path, file, metric)).max().orElse(0);
             NiceScale scale = niceScale(observedMax, plotHeight);
             int max = scale.maximum();
             drawSelectedRange(g, plotWidth, plotHeight);
@@ -148,7 +150,7 @@ final class LocChartPanel extends JPanel {
             g.setStroke(new BasicStroke(2.2f));
             for (int i = 0; i < snapshots.size(); i++) {
                 int x = xAt(i, plotWidth);
-                int count = snapshots.get(i).linesFor(path, file, showRloc);
+                int count = snapshots.get(i).linesFor(path, file, metric);
                 int y = TOP + plotHeight - (int) Math.round(count * plotHeight / (double) max);
                 if (previousX >= 0) g.drawLine(previousX, previousY, x, y);
                 g.fillOval(x - 3, y - 3, 7, 7);
@@ -236,10 +238,13 @@ final class LocChartPanel extends JPanel {
                     "<br><b>Total LOC: " + signed(locDelta) + " → " +
                     String.format("%,d", to.linesFor("", false, false)) + "</b>" +
                     "<br>Total RLOC: " + signed(rlocDelta) + " → " +
-                    String.format("%,d", to.linesFor("", false, true));
+                    String.format("%,d", to.linesFor("", false, true)) +
+                    (metric == CountingMetric.LOC || metric == CountingMetric.RLOC ? "" :
+                            "<br>Total " + metric + ": " + signed(to.linesFor("", false, metric) - from.linesFor("", false, metric)) +
+                            " → " + String.format("%,d", to.linesFor("", false, metric)));
         }
-        return "<html><b>" + String.format("%,d", value.linesFor(path, file, showRloc)) +
-                (showRloc ? " RLOC" : " LOC") + "</b><br>" +
+        return "<html><b>" + String.format("%,d", value.linesFor(path, file, metric)) +
+                (" " + metric) + "</b><br>" +
                 DATE.format(value.commit().time()) + " · " + value.commit().shortHash() + "<br>" +
                 escape(value.commit().subject()) + range + "</html>";
     }

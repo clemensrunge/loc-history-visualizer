@@ -1,6 +1,7 @@
 package dev.lochistory.analysis;
 
 import dev.lochistory.model.CommitInfo;
+import dev.lochistory.model.CountingMetric;
 import dev.lochistory.model.FileMetrics;
 import dev.lochistory.model.HistoryResult;
 import dev.lochistory.model.LocSnapshot;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
@@ -24,10 +26,16 @@ public final class LocHistoryAnalyzer {
     private static final Pattern EXCLUDED_PATH = Pattern.compile(
             "(^|/)(?:\\.[^/]+|build|out|target|node_modules|vendor|dist|cmake-build-[^/]*)(?:/|$)");
 
+    private final List<TokenCounter> tokenCounters;
     private final GitCommandRunner git;
     private final Path repository;
 
     public LocHistoryAnalyzer(Path repository) {
+        this(repository, List.of(new OpenAiTokenCounter(), new ClaudeTokenCounter()));
+    }
+
+    public LocHistoryAnalyzer(Path repository, List<TokenCounter> tokenCounters) {
+        this.tokenCounters = List.copyOf(tokenCounters);
         this.repository = repository;
         git = new GitCommandRunner(repository);
     }
@@ -105,12 +113,13 @@ public final class LocHistoryAnalyzer {
                                          boolean respectGitIgnore, AnalysisProgress progress)
             throws GitCommandException {
         List<LocSnapshot> snapshots = new ArrayList<>();
+        Map<String, Map<CountingMetric, Integer>> tokenCache = new HashMap<>();
         for (int i = sampledNewestFirst.size() - 1; i >= 0; i--) {
             if (progress.isCancelled()) throw new GitCommandException("Analysis cancelled");
             progress.update((sampledNewestFirst.size() - 1 - i) / (double) Math.max(1, sampledNewestFirst.size()),
                     "Counting " + sampledNewestFirst.get(i).shortHash());
             CommitInfo commit = sampledNewestFirst.get(i);
-            snapshots.add(new LocSnapshot(commit, countLines(commit.hash(), respectGitIgnore, progress)));
+            snapshots.add(new LocSnapshot(commit, countLines(commit.hash(), respectGitIgnore, progress, tokenCache)));
         }
         return new HistoryResult(branch, snapshots);
     }
@@ -123,7 +132,7 @@ public final class LocHistoryAnalyzer {
         List<CommitInfo> commits = readCommits(ref, 1, progress);
         if (commits.isEmpty()) throw new GitCommandException("No commit found for " + ref);
         CommitInfo commit = commits.get(0);
-        return new LocSnapshot(commit, countLines(commit.hash(), respectGitIgnore, progress));
+        return new LocSnapshot(commit, countLines(commit.hash(), respectGitIgnore, progress, new HashMap<>()));
     }
 
     private List<CommitInfo> readCommits(String branch, int limit, AnalysisProgress progress)
@@ -147,7 +156,8 @@ public final class LocHistoryAnalyzer {
         return commits;
     }
 
-    private Map<String, FileMetrics> countLines(String commit, boolean respectGitIgnore, AnalysisProgress progress)
+    private Map<String, FileMetrics> countLines(String commit, boolean respectGitIgnore, AnalysisProgress progress,
+                                                 Map<String, Map<CountingMetric, Integer>> tokenCache)
             throws GitCommandException {
         String output = git.run(progress, "grep", "-I", "-n", "-e", "^", commit, "--", ".");
         Map<String, MutableMetrics> counted = new LinkedHashMap<>();
@@ -169,8 +179,31 @@ public final class LocHistoryAnalyzer {
             Set<String> ignoredPaths = new HashSet<>(List.of(ignored.split("\0")));
             ignoredPaths.forEach(counted::remove);
         }
+        // Git blob IDs let unchanged files reuse token counts across historical commits.
+        Map<String, String> blobs = new HashMap<>();
+        for (String record : git.run(progress, "ls-tree", "-r", "-z", commit).split("\0")) {
+            int tab = record.indexOf('\t');
+            if (tab < 0) continue;
+            String[] metadata = record.substring(0, tab).split(" ");
+            if (metadata.length == 3 && metadata[1].equals("blob")) blobs.put(record.substring(tab + 1), metadata[2]);
+        }
         Map<String, FileMetrics> result = new LinkedHashMap<>();
-        counted.forEach((path, value) -> result.put(path, new FileMetrics(value.loc, value.rloc)));
+        for (var entry : counted.entrySet()) {
+            if (progress.isCancelled()) throw new GitCommandException("Analysis cancelled");
+            Map<CountingMetric, Integer> counts = new EnumMap<>(CountingMetric.class);
+            counts.put(CountingMetric.LOC, entry.getValue().loc);
+            counts.put(CountingMetric.RLOC, entry.getValue().rloc);
+            String blob = blobs.get(entry.getKey());
+            Map<CountingMetric, Integer> tokens = tokenCache.get(blob);
+            if (tokens == null) {
+                String text = git.run(progress, "show", commit + ":" + entry.getKey());
+                tokens = new EnumMap<>(CountingMetric.class);
+                for (TokenCounter counter : tokenCounters) tokens.put(counter.metric(), counter.count(text));
+                if (blob != null) tokenCache.put(blob, Map.copyOf(tokens));
+            }
+            counts.putAll(tokens);
+            result.put(entry.getKey(), new FileMetrics(counts));
+        }
         return result;
     }
 

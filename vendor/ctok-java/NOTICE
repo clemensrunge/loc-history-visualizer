@@ -1,0 +1,28 @@
+ctok-java
+
+Java port of ctok by Sander Land:
+https://github.com/sanderland/ctok
+
+Upstream version: 1.3.0
+Upstream commit: ad78ea15a1febf983b379475b20f5a2b0d2ebe76
+Copyright (c) 2026 Sander Land
+Java port copyright (c) 2026 Clemens Runge
+
+The tokenizer implementation, vocabulary, byte fallback, witness records,
+and regression examples are derived from the upstream project under the
+MIT License. The complete license and both copyright notices are in LICENSE.
+
+Source mapping:
+- Ctok.java: ctok/main.py and ctok/engine.py
+- TextNormalizer.java: ctok/normalize.py and ctok/constants.py
+- Notation.java: ctok/notation.py and ctok/constants.py
+- v3.bin: ctok/data/pieces_v3.json
+- v4_7.bin: ctok/data/pieces_v4_7.json
+- unicode.bin: upstream classification/case rules evaluated with the
+  reference Python unicodedata and regex Unicode tables
+- generate_parity.py: upstream API regression rows, corpus texts, and
+  vocabulary witness probes executed through the Python reference API
+
+PROVENANCE.json records upstream vocabulary hashes, model metadata, and the
+reference Python/Unicode/regex versions. This port is an independent project;
+it is not an official Anthropic tokenizer.

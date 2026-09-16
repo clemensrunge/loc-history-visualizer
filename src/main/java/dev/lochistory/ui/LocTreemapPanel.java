@@ -1,5 +1,7 @@
 package dev.lochistory.ui;
 
+import dev.lochistory.model.CountingMetric;
+
 import com.intellij.ui.JBColor;
 import dev.lochistory.model.LocSnapshot;
 import dev.lochistory.model.FileMetrics;
@@ -23,7 +25,7 @@ final class LocTreemapPanel extends JPanel {
     private LocSnapshot snapshot;
     private Consumer<PathNode> selectionListener = ignored -> {};
     private Consumer<PathNode> excludeListener = ignored -> {};
-    private boolean showRloc = true;
+    private CountingMetric metric = CountingMetric.RLOC;
     private LocSnapshot diffFrom;
     private LocSnapshot diffTo;
     private Set<String> collapsedDirectories = Set.of();
@@ -60,20 +62,20 @@ final class LocTreemapPanel extends JPanel {
         menu.show(this, event.getX(), event.getY());
     }
 
-    void showSnapshot(LocSnapshot value, boolean displayRloc, Set<String> collapsed) {
+    void showSnapshot(LocSnapshot value, CountingMetric displayMetric, Set<String> collapsed) {
         snapshot = value;
-        showRloc = displayRloc;
+        metric = displayMetric;
         collapsedDirectories = Set.copyOf(collapsed);
         diffFrom = null;
         diffTo = null;
         repaint();
     }
 
-    void showDiff(LocSnapshot from, LocSnapshot to, boolean displayRloc, Set<String> collapsed) {
+    void showDiff(LocSnapshot from, LocSnapshot to, CountingMetric displayMetric, Set<String> collapsed) {
         snapshot = to;
         diffFrom = from;
         diffTo = to;
-        showRloc = displayRloc;
+        metric = displayMetric;
         collapsedDirectories = Set.copyOf(collapsed);
         repaint();
     }
@@ -84,7 +86,7 @@ final class LocTreemapPanel extends JPanel {
         cells.clear();
         if (snapshot == null || snapshot.metricsByFile().isEmpty()) return;
         boolean diff = diffFrom != null && diffTo != null;
-        Item root = diff ? diffTree(diffFrom, diffTo, showRloc) : tree(snapshot, showRloc);
+        Item root = diff ? diffTree(diffFrom, diffTo, metric) : tree(snapshot, metric);
         int banner = diff ? 25 : 0;
         if (root.lines > 0) {
             layout(root, new Rectangle2D.Double(2, 2 + banner, Math.max(1, getWidth() - 4),
@@ -137,7 +139,7 @@ final class LocTreemapPanel extends JPanel {
         Rectangle pixelBounds = bounds.getBounds();
         boolean collapsed = collapsedDirectories.contains(item.path);
         cells.add(new Cell(new PathNode(item.name + (collapsed ? " [excluded]" : ""), item.path,
-                item.file, item.loc, item.rloc, showRloc), pixelBounds, diff));
+                item.file, item.loc, item.rloc, item.count, metric), pixelBounds, diff));
         if (collapsed || item.children.isEmpty() || bounds.width < 5 || bounds.height < 5) return;
         double header = item.path.isEmpty() ? 0 : Math.min(19, bounds.height / 4);
         Rectangle2D.Double inside = new Rectangle2D.Double(bounds.x + 2, bounds.y + header + 2,
@@ -211,10 +213,13 @@ final class LocTreemapPanel extends JPanel {
             return "<html><b>" + hit.node.path() + "</b><br>LOC: <b>" + signed(hit.node.loc()) +
                     " → " + String.format("%,d", resultLoc) + "</b><br>RLOC: <b>" + signed(hit.node.rloc()) +
                     " → " + String.format("%,d", resultRloc) + "</b><br>" +
+                    (metric == CountingMetric.LOC || metric == CountingMetric.RLOC ? "" :
+                            metric + ": <b>" + signed(hit.node.lines()) + " → " +
+                            String.format("%,d", diffTo.linesFor(hit.node.path(), hit.node.file(), metric)) + "</b><br>") +
                     diffFrom.commit().shortHash() + " → " + diffTo.commit().shortHash() + "</html>";
         }
         return "<html><b>" + hit.node.path() + "</b><br>" + String.format("%,d", hit.node.lines()) +
-                (hit.node.showRloc() ? " RLOC" : " LOC") + "<br>RLOC/LOC: " +
+                (" " + hit.node.metric()) + "<br>RLOC/LOC: " +
                 String.format("%.1f%%", hit.node.loc() == 0 ? 0 : hit.node.rloc() * 100.0 / hit.node.loc()) + "</html>";
     }
 
@@ -223,15 +228,16 @@ final class LocTreemapPanel extends JPanel {
         return null;
     }
 
-    private static Item tree(LocSnapshot snapshot, boolean showRloc) {
+    private static Item tree(LocSnapshot snapshot, CountingMetric metric) {
         Item root = new Item("Project", "", false);
         snapshot.metricsByFile().forEach((path, metrics) -> {
-            int lines = metrics.value(showRloc);
+            int lines = metrics.value(metric);
             String[] parts = path.split("/");
             Item current = root;
             current.lines += lines;
             current.loc += metrics.loc();
             current.rloc += metrics.rloc();
+            current.count += lines;
             StringBuilder full = new StringBuilder();
             for (int i = 0; i < parts.length; i++) {
                 if (full.length() > 0) full.append('/');
@@ -244,13 +250,14 @@ final class LocTreemapPanel extends JPanel {
                 child.lines += lines;
                 child.loc += metrics.loc();
                 child.rloc += metrics.rloc();
+                child.count += lines;
                 current = child;
             }
         });
         return root;
     }
 
-    private static Item diffTree(LocSnapshot from, LocSnapshot to, boolean showRloc) {
+    private static Item diffTree(LocSnapshot from, LocSnapshot to, CountingMetric metric) {
         Item root = new Item("Changes", "", false);
         Set<String> paths = new TreeSet<>(from.metricsByFile().keySet());
         paths.addAll(to.metricsByFile().keySet());
@@ -259,13 +266,14 @@ final class LocTreemapPanel extends JPanel {
             FileMetrics after = to.metricsByFile().getOrDefault(path, new FileMetrics(0, 0));
             int deltaLoc = after.loc() - before.loc();
             int deltaRloc = after.rloc() - before.rloc();
-            int shownDelta = showRloc ? deltaRloc : deltaLoc;
+            int shownDelta = after.value(metric) - before.value(metric);
             if (shownDelta == 0) continue;
             String[] parts = path.split("/");
             Item current = root;
             current.lines += Math.abs(shownDelta);
             current.loc += deltaLoc;
             current.rloc += deltaRloc;
+            current.count += shownDelta;
             StringBuilder full = new StringBuilder();
             for (int i = 0; i < parts.length; i++) {
                 if (full.length() > 0) full.append('/');
@@ -278,6 +286,7 @@ final class LocTreemapPanel extends JPanel {
                 child.lines += Math.abs(shownDelta);
                 child.loc += deltaLoc;
                 child.rloc += deltaRloc;
+                child.count += shownDelta;
                 current = child;
             }
         }
@@ -286,15 +295,15 @@ final class LocTreemapPanel extends JPanel {
 
     private void drawDiffBanner(Graphics2D g, Item root) {
         g.setColor(getForeground());
-        String metric = showRloc ? "RLOC" : "LOC";
-        int delta = showRloc ? root.rloc : root.loc;
+        String labelMetric = metric.toString();
+        int delta = root.count;
         String label = "Diff " + diffFrom.commit().shortHash() + " → " + diffTo.commit().shortHash() +
-                "   Total: " + signed(delta) + " " + metric +
+                "   Total: " + signed(delta) + " " + labelMetric +
                 "   (normal color added, grayscale removed; area = absolute change)";
         g.drawString(label, 6, 18);
         if (root.lines == 0) {
             g.setColor(JBColor.GRAY);
-            g.drawString("No " + metric + " changes in this range", 6, 43);
+            g.drawString("No " + labelMetric + " changes in this range", 6, 43);
         }
     }
 
@@ -325,6 +334,7 @@ final class LocTreemapPanel extends JPanel {
         private int lines;
         private int loc;
         private int rloc;
+        private int count;
         private Item(String name, String path, boolean file) {
             this.name = name;
             this.path = path;
