@@ -58,6 +58,10 @@ final class LocHistoryPanel extends JPanel {
     private List<GitIgnoreRule> gitIgnoreRules = List.of();
     private boolean updatingExcludedTypes;
     private boolean lastAnalysisAll;
+    private HistoryResult committedResult;
+    private String workingTreeRevision;
+    private boolean refreshingWorkingTree;
+    private final Timer workingTreeTimer = new Timer(5000, event -> refreshWorkingTree());
 
     LocHistoryPanel(Project project) {
         super(new BorderLayout());
@@ -119,6 +123,7 @@ final class LocHistoryPanel extends JPanel {
     @Override
     public void addNotify() {
         super.addNotify();
+        workingTreeTimer.start();
         ToolTipManager manager = ToolTipManager.sharedInstance();
         oldTooltipDelay = manager.getInitialDelay();
         oldReshowDelay = manager.getReshowDelay();
@@ -128,6 +133,7 @@ final class LocHistoryPanel extends JPanel {
 
     @Override
     public void removeNotify() {
+        workingTreeTimer.stop();
         ToolTipManager manager = ToolTipManager.sharedInstance();
         manager.setInitialDelay(oldTooltipDelay);
         manager.setReshowDelay(oldReshowDelay);
@@ -246,15 +252,19 @@ final class LocHistoryPanel extends JPanel {
         ProgressManager.getInstance().run(new Task.Backgroundable(project,
                 allCommits ? "Analyze Complete LOC History" : "Analyze LOC History", true) {
             private HistoryResult loaded;
+            private HistoryResult committed;
+            private String revision;
             private Exception failure;
 
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 try {
                     LocHistoryAnalyzer analyzer = analyzer();
-                    loaded = allCommits
+                    committed = allCommits
                             ? analyzer.analyzeAll(branch, useGitIgnore, adapt(indicator))
                             : analyzer.analyze(branch, limit, stride, useGitIgnore, adapt(indicator));
+                    revision = analyzer.workingTreeRevision(adapt(indicator));
+                    loaded = analyzer.appendWorkingTree(committed, adapt(indicator));
                 } catch (Exception e) {
                     failure = e;
                 }
@@ -267,10 +277,12 @@ final class LocHistoryPanel extends JPanel {
                     return;
                 }
                 rawResult = loaded;
+                committedResult = committed;
+                workingTreeRevision = revision;
                 lastAnalysisAll = allCommits;
                 visualResult = applyTypeExclusions(loaded);
                 result = applyExclusions(loaded);
-                if (allCommits) maximumCommits.setValue(Math.max(1, loaded.snapshots().size()));
+                if (allCommits) maximumCommits.setValue(Math.max(1, committed.snapshots().size()));
                 diffFrom = null;
                 diffTo = null;
                 chart.clearRange();
@@ -280,6 +292,49 @@ final class LocHistoryPanel extends JPanel {
                 }
                 refreshVisuals();
                 setBusy(false, summaryText());
+            }
+        });
+    }
+
+    private void refreshWorkingTree() {
+        if (busy || refreshingWorkingTree || committedResult == null || project.isDisposed()) return;
+        refreshingWorkingTree = true;
+        HistoryResult history = committedResult;
+        String previousRevision = workingTreeRevision;
+        ProgressManager.getInstance().run(new Task.Backgroundable(project, "Refresh Local LOC History", false) {
+            private HistoryResult updated;
+            private String revision;
+            private Exception failure;
+            private boolean headChanged;
+
+            @Override public void run(@NotNull ProgressIndicator indicator) {
+                try {
+                    LocHistoryAnalyzer analyzer = analyzer();
+                    revision = analyzer.workingTreeRevision(adapt(indicator));
+                    if (revision.equals(previousRevision)) return;
+                    headChanged = previousRevision != null &&
+                            !revision.lines().findFirst().equals(previousRevision.lines().findFirst());
+                    if (!headChanged) updated = analyzer.appendWorkingTree(history, adapt(indicator));
+                } catch (Exception e) { failure = e; }
+            }
+
+            @Override public void onFinished() {
+                refreshingWorkingTree = false;
+                if (project.isDisposed() || busy || committedResult != history) return;
+                if (failure != null) {
+                    status.setText("Local refresh failed: " + failure.getMessage());
+                    return;
+                }
+                if (headChanged) { startAnalysis(lastAnalysisAll); return; }
+                if (updated == null) return;
+                workingTreeRevision = revision;
+                rawResult = updated;
+                visualResult = applyTypeExclusions(updated);
+                result = applyExclusions(updated);
+                diffFrom = null;
+                diffTo = null;
+                chart.clearRange();
+                refreshVisuals();
             }
         });
     }
@@ -466,7 +521,8 @@ final class LocHistoryPanel extends JPanel {
     private String summaryText() {
         LocSnapshot latest = result.snapshots().get(result.snapshots().size() - 1);
         CountingMetric selected = selectedMetric();
-        return result.snapshots().size() + " commits · " +
+        boolean local = latest.commit().hash().equals("WORKTREE");
+        return (result.snapshots().size() - (local ? 1 : 0)) + " commits" + (local ? " + working tree" : "") + " · " +
                 String.format("%,d %s at %s · RLOC/LOC: %.1f%% · OpenAI tokens: %,d · %s: %,d · OpenAI/Claude: %.1f%%",
                         latest.linesFor("", false, selected), selected, latest.commit().shortHash(),
                         latest.percentage(CountingMetric.RLOC, CountingMetric.LOC),

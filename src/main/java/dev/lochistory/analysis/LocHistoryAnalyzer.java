@@ -8,6 +8,8 @@ import dev.lochistory.model.LocSnapshot;
 
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.charset.StandardCharsets;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -133,6 +135,71 @@ public final class LocHistoryAnalyzer {
         if (commits.isEmpty()) throw new GitCommandException("No commit found for " + ref);
         CommitInfo commit = commits.get(0);
         return new LocSnapshot(commit, countLines(commit.hash(), respectGitIgnore, progress, new HashMap<>()));
+    }
+
+    /** Counts current disk contents, including non-ignored untracked files, without changing Git state. */
+    public String workingTreeRevision(AnalysisProgress progress) throws GitCommandException, IOException {
+        Path root = Path.of(git.run(progress, "rev-parse", "--show-toplevel").trim());
+        StringBuilder revision = new StringBuilder(git.run(progress, "rev-parse", "HEAD"));
+        revision.append(git.run(progress, "status", "--porcelain=v1", "-z", "--untracked-files=all"));
+        for (String path : git.run(progress, "ls-files", "--full-name", "--cached", "--others",
+                "--exclude-standard", "-z").split("\0")) {
+            if (path.isEmpty()) continue;
+            Path file = root.resolve(path);
+            if (Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+                revision.append('\0').append(path).append(':').append(Files.size(file))
+                        .append(':').append(Files.getLastModifiedTime(file));
+            }
+        }
+        return revision.toString();
+    }
+
+    public HistoryResult appendWorkingTree(HistoryResult history, AnalysisProgress progress)
+            throws GitCommandException, IOException {
+        if (git.run(progress, "status", "--porcelain=v1", "-z", "--untracked-files=all").isEmpty()) return history;
+        List<LocSnapshot> snapshots = new ArrayList<>(history.snapshots());
+        snapshots.add(workingTreeSnapshot(progress));
+        return new HistoryResult(history.branch(), snapshots);
+    }
+
+    public LocSnapshot workingTreeSnapshot(AnalysisProgress progress) throws GitCommandException, IOException {
+        Path root = Path.of(git.run(progress, "rev-parse", "--show-toplevel").trim());
+        String listed = git.run(progress, "ls-files", "--full-name", "--cached", "--others", "--exclude-standard", "-z");
+        Set<String> paths = new java.util.TreeSet<>(List.of(listed.split("\0")));
+        paths.remove("");
+        if (!paths.isEmpty()) {
+            String ignored = git.runWithInput(progress, String.join("\0", paths) + "\0",
+                    "check-ignore", "--no-index", "-z", "--stdin");
+            paths.removeAll(List.of(ignored.split("\0")));
+        }
+        Map<String, FileMetrics> metrics = new LinkedHashMap<>();
+        for (String path : paths) {
+            if (progress.isCancelled()) throw new GitCommandException("Analysis cancelled");
+            if (EXCLUDED_PATH.matcher(path).find()) continue;
+            Path file = root.resolve(path);
+            if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) continue;
+            byte[] bytes = Files.readAllBytes(file);
+            boolean binary = false;
+            for (byte value : bytes) if (value == 0) { binary = true; break; }
+            if (binary || bytes.length == 0) continue;
+            String text = new String(bytes, StandardCharsets.UTF_8);
+            Map<CountingMetric, Integer> counts = new EnumMap<>(CountingMetric.class);
+            LineClassifier.State state = new LineClassifier.State();
+            int loc = 0;
+            int rloc = 0;
+            // Split only at LF, matching git grep's physical-line counting.
+            String[] lines = text.split("\n", -1);
+            int length = lines.length - (text.endsWith("\n") ? 1 : 0);
+            for (int i = 0; i < length; i++) {
+                loc++;
+                if (LineClassifier.hasCode(path, lines[i], state)) rloc++;
+            }
+            counts.put(CountingMetric.LOC, loc);
+            counts.put(CountingMetric.RLOC, rloc);
+            for (TokenCounter counter : tokenCounters) counts.put(counter.metric(), counter.count(text));
+            metrics.put(path, new FileMetrics(counts));
+        }
+        return new LocSnapshot(new CommitInfo("WORKTREE", Instant.now(), "Local working tree"), metrics);
     }
 
     private List<CommitInfo> readCommits(String branch, int limit, AnalysisProgress progress)

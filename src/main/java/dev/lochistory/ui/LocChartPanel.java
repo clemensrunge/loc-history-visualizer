@@ -216,7 +216,8 @@ final class LocChartPanel extends JPanel {
             g.setColor(new JBColor(new Color(225, 225, 225), new Color(50, 52, 55)));
             g.drawLine(x, TOP, x, TOP + plotHeight);
             g.setColor(getForeground());
-            String date = DATE.format(snapshots.get(index).commit().time());
+            String date = snapshots.get(index).commit().hash().equals("WORKTREE")
+                    ? "Working tree" : DATE.format(snapshots.get(index).commit().time());
             int labelWidth = g.getFontMetrics().stringWidth(date);
             int labelX = Math.max(LEFT, Math.min(LEFT + plotWidth - labelWidth, x - labelWidth / 2));
             g.drawString(date, labelX, getHeight() - 12);

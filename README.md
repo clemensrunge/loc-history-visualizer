@@ -45,19 +45,21 @@ The ZIP is created under `build/distributions/`.
 Download a permanent, installable plugin ZIP from the repository's **Releases** page. Maintainers publish one by pushing a version tag, for example:
 
 ```bash
-git tag v0.9.0
-git push origin v0.9.0
+git tag v0.9.1
+git push origin v0.9.1
 ```
 
 For development builds, open the repository's **Actions** tab, select a successful **Build CLion plugin** run, and download the `loc-history-visualizer-plugin` artifact. Its archive contains the installable plugin ZIP.
 
 ## Run headless
 
+In the CLion visualizer, an unclean working tree automatically adds a final **Working tree** point to the graph and supplies the latest tree and treemap totals. While the panel is open, local files are checked every five seconds. Committing or cleaning all local changes removes the point; there is no switch to disable it. Counts reflect files saved to disk, including non-ignored untracked files. When viewing another branch, this point still represents the currently checked-out working tree.
+
 The standalone command-line analyzer uses the same Git-based counting engine without starting CLion. It reads files directly from commits and does not check them out or modify the working tree. Build and run it with JDK 21 and Git:
 
 ```bash
 ./gradlew cliJar
-java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
   --repo . --branch HEAD --commits 100
 ```
 
@@ -75,18 +77,27 @@ The final TSV row has `kind=summary` and contains project totals for the latest 
 For readable console output with aligned tables, use `--format text`. It includes the same history, folder totals, and metric summary as Markdown, and supports `--compare`:
 
 ```bash
-java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
   --repo . --branch HEAD --commits 1 --format text --quiet
-java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
   --repo . --branch HEAD --commits 1 --compare HEAD~1 --format text --quiet
 ```
+
+Compare uncommitted local contents against `HEAD` with:
+
+```bash
+java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
+  --repo . --working-tree --quiet
+```
+
+Working-tree mode defaults to readable text and comparison against `HEAD`. Use `--compare REF` for another base or `--format markdown` for Markdown. It reads current disk contents, including staged and unstaged edits and non-ignored untracked files; deleted files are absent. It respects current ignore rules and the analyzer's directory exclusions, skips binary files and symlinks, and does not modify files or the Git index. Explicit `--format tsv` emits absolute working-tree counts without comparison deltas. History sampling options do not apply in this mode.
 
 Generate a readable Markdown dashboard and compare the latest snapshot with a base ref:
 
 Markdown ends with a summary of LOC, RLOC, OpenAI tokens, and Claude tokens. With `--compare`, the summary also includes the base counts and deltas (latest minus base) for each metric.
 
 ```bash
-java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
   --repo . --branch HEAD --compare origin/main \
   --format markdown --output LOC_HISTORY.md
 ```

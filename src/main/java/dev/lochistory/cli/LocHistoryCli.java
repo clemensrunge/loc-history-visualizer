@@ -38,11 +38,13 @@ public final class LocHistoryCli {
                 analyzer.branches(AnalysisProgress.NONE).forEach(out::println);
                 return 0;
             }
-            String branch = options.branch;
+            String branch = options.workingTree ? "HEAD" : options.branch;
             if (branch == null || branch.isBlank()) branch = analyzer.currentBranch(AnalysisProgress.NONE);
             if (branch.isBlank()) throw new IllegalArgumentException("Detached HEAD: specify --branch <name>");
-            HistoryResult result = analyzer.analyze(branch, options.commits, options.sampleEvery,
-                    options.quiet ? AnalysisProgress.NONE : new StderrProgress(err));
+            AnalysisProgress progress = options.quiet ? AnalysisProgress.NONE : new StderrProgress(err);
+            HistoryResult result = options.workingTree
+                    ? new HistoryResult("working tree", List.of(analyzer.workingTreeSnapshot(progress)))
+                    : analyzer.analyze(branch, options.commits, options.sampleEvery, progress);
             LocSnapshot base = !options.format.equals("tsv") && options.compare != null
                     ? analyzer.snapshot(options.compare, AnalysisProgress.NONE) : null;
             String report = switch (options.format) {
@@ -281,6 +283,8 @@ public final class LocHistoryCli {
         stream.println("       loc-history [--repo PATH] --list-branches");
         stream.println("Writes tab-separated folder and file LOC records to stdout.");
         stream.println("Use --format text for readable console tables; --compare applies to text and markdown.");
+        stream.println("       loc-history [--repo PATH] --working-tree [--compare REF] [--format text|markdown|tsv]");
+        stream.println("Working-tree mode defaults to text output and comparison against HEAD.");
     }
 
     private static final class StderrProgress implements AnalysisProgress {
@@ -305,6 +309,7 @@ public final class LocHistoryCli {
         private boolean listBranches;
         private boolean quiet;
         private boolean help;
+        private boolean workingTree;
         private String format = "tsv";
         private String compare;
         private Path output;
@@ -312,6 +317,7 @@ public final class LocHistoryCli {
 
         private static Options parse(String[] args) {
             Options value = new Options();
+            boolean formatSpecified = false;
             for (int i = 0; i < args.length; i++) {
                 switch (args[i]) {
                     case "--repo" -> value.repository = Path.of(requireValue(args, ++i, "--repo")).toAbsolutePath().normalize();
@@ -320,13 +326,19 @@ public final class LocHistoryCli {
                     case "--sample-every" -> value.sampleEvery = positive(requireValue(args, ++i, "--sample-every"), "--sample-every");
                     case "--list-branches" -> value.listBranches = true;
                     case "--quiet" -> value.quiet = true;
-                    case "--format" -> value.format = requireValue(args, ++i, "--format");
+                    case "--working-tree" -> value.workingTree = true;
+                    case "--format" -> { value.format = requireValue(args, ++i, "--format"); formatSpecified = true; }
                     case "--compare" -> value.compare = requireValue(args, ++i, "--compare");
                     case "--output" -> value.output = Path.of(requireValue(args, ++i, "--output"));
                     case "--check" -> value.check = Path.of(requireValue(args, ++i, "--check"));
                     case "-h", "--help" -> value.help = true;
                     default -> throw new IllegalArgumentException("Unknown option: " + args[i]);
                 }
+            }
+            if (value.workingTree) {
+                if (value.branch != null) throw new IllegalArgumentException("--branch cannot be combined with --working-tree; use --compare for the base");
+                if (!formatSpecified) value.format = "text";
+                if (value.compare == null) value.compare = "HEAD";
             }
             if (!value.format.equals("tsv") && !value.format.equals("markdown") && !value.format.equals("text"))
                 throw new IllegalArgumentException("--format must be tsv, markdown, or text");
