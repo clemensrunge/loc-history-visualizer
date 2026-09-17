@@ -45,8 +45,8 @@ The ZIP is created under `build/distributions/`.
 Download a permanent, installable plugin ZIP from the repository's **Releases** page. Maintainers publish one by pushing a version tag, for example:
 
 ```bash
-git tag v0.9.1
-git push origin v0.9.1
+git tag v0.9.2
+git push origin v0.9.2
 ```
 
 For development builds, open the repository's **Actions** tab, select a successful **Build CLion plugin** run, and download the `loc-history-visualizer-plugin` artifact. Its archive contains the installable plugin ZIP.
@@ -59,7 +59,7 @@ The standalone command-line analyzer uses the same Git-based counting engine wit
 
 ```bash
 ./gradlew cliJar
-java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.2-cli.jar \
   --repo . --branch HEAD --commits 100
 ```
 
@@ -77,16 +77,16 @@ The final TSV row has `kind=summary` and contains project totals for the latest 
 For readable console output with aligned tables, use `--format text`. It includes the same history, folder totals, and metric summary as Markdown, and supports `--compare`:
 
 ```bash
-java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.2-cli.jar \
   --repo . --branch HEAD --commits 1 --format text --quiet
-java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.2-cli.jar \
   --repo . --branch HEAD --commits 1 --compare HEAD~1 --format text --quiet
 ```
 
 Compare uncommitted local contents against `HEAD` with:
 
 ```bash
-java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.2-cli.jar \
   --repo . --working-tree --quiet
 ```
 
@@ -97,7 +97,7 @@ Generate a readable Markdown dashboard and compare the latest snapshot with a ba
 Markdown ends with a summary of LOC, RLOC, OpenAI tokens, and Claude tokens. With `--compare`, the summary also includes the base counts and deltas (latest minus base) for each metric.
 
 ```bash
-java -jar build/libs/loc-history-visualizer-0.9.1-cli.jar \
+java -jar build/libs/loc-history-visualizer-0.9.2-cli.jar \
   --repo . --branch HEAD --compare origin/main \
   --format markdown --output LOC_HISTORY.md
 ```

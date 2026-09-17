@@ -2,6 +2,8 @@ package dev.lochistory.ui;
 
 import dev.lochistory.model.CountingMetric;
 
+import com.intellij.icons.AllIcons;
+import com.intellij.util.IconUtil;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
@@ -36,6 +38,7 @@ final class LocHistoryPanel extends JPanel {
     private int oldReshowDelay;
     private final Project project;
     private final JComboBox<String> branches = new JComboBox<>();
+    private final JButton refreshBranches = new JButton(AllIcons.Actions.Refresh);
     private final JSpinner maximumCommits = new JSpinner(new SpinnerNumberModel(60, 1, 999_999, 10));
     private final JSpinner sampleEvery = new JSpinner(new SpinnerNumberModel(1, 1, 100, 1));
     private final JButton analyze = new JButton("Analyze");
@@ -105,6 +108,7 @@ final class LocHistoryPanel extends JPanel {
             analyzeAll.clearHighlight();
             analyzeSelectedBranch();
         });
+        refreshBranches.addActionListener(event -> loadBranches());
         analyzeAll.addActionListener(event -> {
             analyzeAll.clearHighlight();
             analyzeEntireBranch();
@@ -149,6 +153,17 @@ final class LocHistoryPanel extends JPanel {
         explain(branches, "The Git branch whose first-parent commit history will be analyzed without changing your working tree.");
         controls.add(branchLabel);
         controls.add(branches);
+        refreshBranches.setMargin(new Insets(2, 2, 2, 2));
+        Dimension refreshSize = refreshBranches.getPreferredSize();
+        int refreshWidth = Math.max(1, Math.round(refreshSize.width * 0.3f));
+        float iconScale = Math.min(1f, refreshWidth / (float) AllIcons.Actions.Refresh.getIconWidth());
+        refreshBranches.setIcon(IconUtil.scale(AllIcons.Actions.Refresh, refreshBranches, iconScale));
+        refreshBranches.setBorder(BorderFactory.createEmptyBorder());
+        refreshBranches.setMargin(new Insets(0, 0, 0, 0));
+        refreshBranches.setPreferredSize(new Dimension(refreshWidth, refreshSize.height));
+        refreshBranches.getAccessibleContext().setAccessibleName("Refresh branches");
+        explain(refreshBranches, "Refresh the available local and remote Git branches.");
+        controls.add(refreshBranches);
         JBLabel commitsLabel = new JBLabel("Commits:");
         explain(commitsLabel, "Maximum number of historical snapshots to include in the graph.");
         explain(maximumCommits, "Maximum sampled commits to analyze. Larger values provide more history but take longer.");
@@ -192,6 +207,7 @@ final class LocHistoryPanel extends JPanel {
     }
 
     private void loadBranches() {
+        String selected = (String) branches.getSelectedItem();
         setBusy(true, "Finding Git branches…");
         ProgressManager.getInstance().run(new Task.Backgroundable(project, "Find Git Branches", false) {
             private List<String> found = List.of();
@@ -216,15 +232,19 @@ final class LocHistoryPanel extends JPanel {
 
             @Override
             public void onFinished() {
+                if (project.isDisposed()) return;
+                if (failure != null) {
+                    setBusy(false, "Could not refresh Git branches: " + failure.getMessage());
+                    return;
+                }
                 branches.removeAllItems();
                 respectGitIgnore.setVisible(gitIgnoreFound);
                 gitIgnoreRules = loadedRules;
                 refreshExcludedTypesDropdown();
                 found.forEach(branches::addItem);
-                if (!current.isBlank()) branches.setSelectedItem(current);
-                if (failure != null) {
-                    setBusy(false, "Not a readable Git repository: " + failure.getMessage());
-                } else if (found.isEmpty()) {
+                if (selected != null && found.contains(selected)) branches.setSelectedItem(selected);
+                else if (found.contains(current)) branches.setSelectedItem(current);
+                if (found.isEmpty()) {
                     setBusy(false, "No branches with commits found");
                 } else {
                     setBusy(false, found.size() + " branches found. Choose one and click Analyze.");
@@ -352,6 +372,7 @@ final class LocHistoryPanel extends JPanel {
         analyze.setEnabled(!busy && branches.getItemCount() > 0);
         analyzeAll.setEnabled(!busy && branches.getItemCount() > 0);
         branches.setEnabled(!busy);
+        refreshBranches.setEnabled(!busy);
         maximumCommits.setEnabled(!busy);
         sampleEvery.setEnabled(!busy);
         respectGitIgnore.setEnabled(!busy);
