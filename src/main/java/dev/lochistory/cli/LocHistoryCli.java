@@ -6,6 +6,7 @@ import dev.lochistory.analysis.LocHistoryAnalyzer;
 import dev.lochistory.model.HistoryResult;
 import dev.lochistory.model.LocSnapshot;
 import dev.lochistory.model.FileMetrics;
+import dev.lochistory.model.CountingMetric;
 
 import java.io.PrintStream;
 import java.io.IOException;
@@ -76,16 +77,22 @@ public final class LocHistoryCli {
     private static String renderTsv(HistoryResult result) {
         java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
         PrintStream out = new PrintStream(bytes, true, StandardCharsets.UTF_8);
-        out.println("branch\tcommit\ttimestamp\tpath\tkind\trloc\tloc\trloc_percent");
+        out.println("branch\tcommit\ttimestamp\tpath\tkind\trloc\tloc\trloc_percent\topenai_tokens\tclaude_tokens");
         for (LocSnapshot snapshot : result.snapshots()) {
             List<String> folders = collectFolders(snapshot);
             emit(out, result.branch(), snapshot, ".", "folder",
-                    snapshot.linesFor("", false, true), snapshot.linesFor("", false, false));
+                    snapshot.linesFor("", false, true), snapshot.linesFor("", false, false),
+                    snapshot.linesFor("", false, CountingMetric.OPENAI_TOKENS),
+                    snapshot.linesFor("", false, CountingMetric.CLAUDE_TOKENS));
             folders.forEach(path -> emit(out, result.branch(), snapshot, path, "folder",
-                    snapshot.linesFor(path, false, true), snapshot.linesFor(path, false, false)));
+                    snapshot.linesFor(path, false, true), snapshot.linesFor(path, false, false),
+                    snapshot.linesFor(path, false, CountingMetric.OPENAI_TOKENS),
+                    snapshot.linesFor(path, false, CountingMetric.CLAUDE_TOKENS)));
             snapshot.metricsByFile().entrySet().stream().sorted(MapEntryComparator.INSTANCE)
                     .forEach(entry -> emit(out, result.branch(), snapshot, entry.getKey(), "file",
-                            entry.getValue().rloc(), entry.getValue().loc()));
+                            entry.getValue().rloc(), entry.getValue().loc(),
+                            entry.getValue().value(CountingMetric.OPENAI_TOKENS),
+                            entry.getValue().value(CountingMetric.CLAUDE_TOKENS)));
         }
         return bytes.toString(StandardCharsets.UTF_8);
     }
@@ -153,10 +160,10 @@ public final class LocHistoryCli {
     }
 
     private static void emit(PrintStream out, String branch, LocSnapshot snapshot,
-                             String path, String kind, int rloc, int loc) {
-        out.printf("%s\t%s\t%s\t%s\t%s\t%d\t%d\t%.2f%n", clean(branch), snapshot.commit().hash(),
+                             String path, String kind, int rloc, int loc, int openaiTokens, int claudeTokens) {
+        out.printf("%s\t%s\t%s\t%s\t%s\t%d\t%d\t%.2f\t%d\t%d%n", clean(branch), snapshot.commit().hash(),
                 DateTimeFormatter.ISO_INSTANT.format(snapshot.commit().time()), clean(path), kind, rloc, loc,
-                loc == 0 ? 0 : rloc * 100.0 / loc);
+                loc == 0 ? 0 : rloc * 100.0 / loc, openaiTokens, claudeTokens);
     }
 
     private static String clean(String value) {
