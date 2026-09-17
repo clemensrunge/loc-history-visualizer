@@ -72,6 +72,15 @@ HEAD	352f375ac51779b9bbc214f3ab5ad42e06f54503	2026-09-14T18:15:48Z	src/main/java
 
 The final TSV row has `kind=summary` and contains project totals for the latest analyzed commit: RLOC, LOC, RLOC percentage, OpenAI tokens, and Claude tokens. It repeats that commit's `.` folder totals; it does not sum directory rows or historical snapshots.
 
+For readable console output with aligned tables, use `--format text`. It includes the same history, folder totals, and metric summary as Markdown, and supports `--compare`:
+
+```bash
+java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \
+  --repo . --branch HEAD --commits 1 --format text --quiet
+java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \
+  --repo . --branch HEAD --commits 1 --compare HEAD~1 --format text --quiet
+```
+
 Generate a readable Markdown dashboard and compare the latest snapshot with a base ref:
 
 Markdown ends with a summary of LOC, RLOC, OpenAI tokens, and Claude tokens. With `--compare`, the summary also includes the base counts and deltas (latest minus base) for each metric.

@@ -43,10 +43,13 @@ public final class LocHistoryCli {
             if (branch.isBlank()) throw new IllegalArgumentException("Detached HEAD: specify --branch <name>");
             HistoryResult result = analyzer.analyze(branch, options.commits, options.sampleEvery,
                     options.quiet ? AnalysisProgress.NONE : new StderrProgress(err));
-            String report = options.format.equals("markdown")
-                    ? renderMarkdown(result, options.compare == null ? null :
-                        analyzer.snapshot(options.compare, AnalysisProgress.NONE))
-                    : renderTsv(result);
+            LocSnapshot base = !options.format.equals("tsv") && options.compare != null
+                    ? analyzer.snapshot(options.compare, AnalysisProgress.NONE) : null;
+            String report = switch (options.format) {
+                case "markdown" -> renderMarkdown(result, base);
+                case "text" -> renderText(result, base);
+                default -> renderTsv(result);
+            };
             if (options.check != null) {
                 String existing = Files.exists(options.check) ? Files.readString(options.check) : "";
                 if (!existing.equals(report)) {
@@ -157,6 +160,84 @@ public final class LocHistoryCli {
         return text.toString();
     }
 
+    private static String renderText(HistoryResult result, LocSnapshot base) {
+        StringBuilder text = new StringBuilder("Lines of code history\n\n");
+        text.append("Branch: ").append(clean(result.branch())).append('\n')
+                .append("Counts are physical lines in Git-tracked text files.\n\n");
+        if (result.snapshots().isEmpty()) return text.append("No commits found.\n").toString();
+        LocSnapshot latest = result.snapshots().get(result.snapshots().size() - 1);
+        int total = latest.linesFor("", false);
+        text.append("Current total\n").append(String.format("%,d", total)).append(" LOC at ")
+                .append(latest.commit().shortHash());
+        if (base != null) text.append(" (delta from ").append(base.commit().shortHash()).append(": ")
+                .append(signed(total - base.linesFor("", false))).append(')');
+        text.append("\n\nHistory\n");
+        List<String[]> rows = new ArrayList<>();
+        rows.add(new String[]{"Commit", "Date", "LOC", "Change"});
+        Integer previous = null;
+        for (LocSnapshot snapshot : result.snapshots()) {
+            int count = snapshot.linesFor("", false);
+            rows.add(new String[]{snapshot.commit().shortHash(), snapshot.commit().time().toString().substring(0, 10),
+                    String.format("%,d", count), previous == null ? "—" : signed(count - previous)});
+            previous = count;
+        }
+        appendTextTable(text, rows);
+        text.append("\nLatest folders\n");
+        rows = new ArrayList<>();
+        rows.add(base == null ? new String[]{"Folder", "LOC", "Share"}
+                : new String[]{"Folder", "LOC", "Share", "Delta"});
+        for (String folder : topFolders(latest)) {
+            int count = latest.linesFor(folder, false);
+            String share = String.format("%.1f%%", count * 100.0 / Math.max(1, total));
+            rows.add(base == null ? new String[]{clean(folder), String.format("%,d", count), share}
+                    : new String[]{clean(folder), String.format("%,d", count), share,
+                        signed(count - base.linesFor(folder, false))});
+        }
+        appendTextTable(text, rows);
+        text.append("\nSummary\nProject totals at ").append(latest.commit().shortHash()).append(".\n");
+        if (base != null) text.append("Deltas are latest minus ").append(base.commit().shortHash()).append(".\n");
+        text.append('\n');
+        rows = new ArrayList<>();
+        rows.add(base == null ? new String[]{"Metric", "Total"} : new String[]{"Metric", "Total", "Base", "Delta"});
+        for (CountingMetric metric : CountingMetric.values()) {
+            int count = latest.linesFor("", false, metric);
+            if (base == null) rows.add(new String[]{metric.toString(), String.format("%,d", count)});
+            else {
+                int old = base.linesFor("", false, metric);
+                rows.add(new String[]{metric.toString(), String.format("%,d", count),
+                        String.format("%,d", old), signed(count - old)});
+            }
+        }
+        appendTextTable(text, rows);
+        return text.toString();
+    }
+
+    private static void appendTextTable(StringBuilder text, List<String[]> rows) {
+        int[] widths = new int[rows.get(0).length];
+        for (String[] row : rows) {
+            for (int column = 0; column < widths.length; column++)
+                widths[column] = Math.max(widths[column], row[column].length());
+        }
+        for (int index = 0; index < rows.size(); index++) {
+            String[] row = rows.get(index);
+            for (int column = 0; column < widths.length; column++) {
+                if (column > 0) text.append("  ");
+                int padding = widths[column] - row[column].length();
+                if (column > 0) text.append(" ".repeat(padding));
+                text.append(row[column]);
+                if (column == 0) text.append(" ".repeat(padding));
+            }
+            text.append('\n');
+            if (index == 0) {
+                for (int column = 0; column < widths.length; column++) {
+                    if (column > 0) text.append("  ");
+                    text.append("-".repeat(widths[column]));
+                }
+                text.append('\n');
+            }
+        }
+    }
+
     private static List<String> topFolders(LocSnapshot snapshot) {
         return collectFolders(snapshot).stream().filter(path -> !path.contains("/"))
                 .sorted(Comparator.comparingInt((String path) -> snapshot.linesFor(path, false)).reversed())
@@ -196,9 +277,10 @@ public final class LocHistoryCli {
 
     private static void usage(PrintStream stream) {
         stream.println("Usage: loc-history [--repo PATH] [--branch NAME] [--commits N] [--sample-every N]");
-        stream.println("                   [--format tsv|markdown] [--compare REF] [--output FILE|--check FILE] [--quiet]");
+        stream.println("                   [--format tsv|markdown|text] [--compare REF] [--output FILE|--check FILE] [--quiet]");
         stream.println("       loc-history [--repo PATH] --list-branches");
         stream.println("Writes tab-separated folder and file LOC records to stdout.");
+        stream.println("Use --format text for readable console tables; --compare applies to text and markdown.");
     }
 
     private static final class StderrProgress implements AnalysisProgress {
@@ -246,8 +328,8 @@ public final class LocHistoryCli {
                     default -> throw new IllegalArgumentException("Unknown option: " + args[i]);
                 }
             }
-            if (!value.format.equals("tsv") && !value.format.equals("markdown"))
-                throw new IllegalArgumentException("--format must be tsv or markdown");
+            if (!value.format.equals("tsv") && !value.format.equals("markdown") && !value.format.equals("text"))
+                throw new IllegalArgumentException("--format must be tsv, markdown, or text");
             if (value.output != null && value.check != null)
                 throw new IllegalArgumentException("Use only one of --output or --check");
             return value;
