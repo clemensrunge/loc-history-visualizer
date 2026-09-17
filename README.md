@@ -70,7 +70,11 @@ HEAD	352f375ac51779b9bbc214f3ab5ad42e06f54503	2026-09-14T18:15:48Z	src	folder	17
 HEAD	352f375ac51779b9bbc214f3ab5ad42e06f54503	2026-09-14T18:15:48Z	src/main/java/dev/lochistory/cli/LocHistoryCli.java	file	220	240	91.67
 ```
 
+The final TSV row has `kind=summary` and contains project totals for the latest analyzed commit: RLOC, LOC, RLOC percentage, OpenAI tokens, and Claude tokens. It repeats that commit's `.` folder totals; it does not sum directory rows or historical snapshots.
+
 Generate a readable Markdown dashboard and compare the latest snapshot with a base ref:
+
+Markdown ends with a summary of LOC, RLOC, OpenAI tokens, and Claude tokens. With `--compare`, the summary also includes the base counts and deltas (latest minus base) for each metric.
 
 ```bash
 java -jar build/libs/loc-history-visualizer-0.9.0-cli.jar \

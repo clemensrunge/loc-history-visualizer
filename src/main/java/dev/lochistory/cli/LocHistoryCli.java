@@ -94,6 +94,14 @@ public final class LocHistoryCli {
                             entry.getValue().value(CountingMetric.OPENAI_TOKENS),
                             entry.getValue().value(CountingMetric.CLAUDE_TOKENS)));
         }
+        if (!result.snapshots().isEmpty()) {
+            LocSnapshot latest = result.snapshots().get(result.snapshots().size() - 1);
+            emit(out, result.branch(), latest, ".", "summary",
+                    latest.linesFor("", false, CountingMetric.RLOC),
+                    latest.linesFor("", false, CountingMetric.LOC),
+                    latest.linesFor("", false, CountingMetric.OPENAI_TOKENS),
+                    latest.linesFor("", false, CountingMetric.CLAUDE_TOKENS));
+        }
         return bytes.toString(StandardCharsets.UTF_8);
     }
 
@@ -130,6 +138,22 @@ public final class LocHistoryCli {
             if (base != null) text.append(' ').append(signed(count - base.linesFor(folder, false))).append(" |");
             text.append('\n');
         });
+        text.append("\n## Summary\n\nProject totals at `").append(latest.commit().shortHash()).append("`.");
+        if (base != null) {
+            text.append(" Deltas are latest minus `").append(base.commit().shortHash()).append("`.");
+        }
+        text.append("\n\n| Metric | Total |").append(base == null ? "" : " Base | Delta |")
+                .append('\n').append(base == null ? "|---|---:|\n" : "|---|---:|---:|---:|\n");
+        for (CountingMetric metric : CountingMetric.values()) {
+            int count = latest.linesFor("", false, metric);
+            text.append("| ").append(metric).append(" | ").append(String.format("%,d", count)).append(" |");
+            if (base != null) {
+                int old = base.linesFor("", false, metric);
+                text.append(' ').append(String.format("%,d", old)).append(" | ")
+                        .append(signed(count - old)).append(" |");
+            }
+            text.append('\n');
+        }
         return text.toString();
     }
 
